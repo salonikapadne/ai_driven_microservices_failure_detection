@@ -2,3 +2,9 @@ node_modules/
 .DS_Store
 logs/
 *.log
+.env
+vertex-ai-key.json
+*.json.bak
+__pycache__/
+.pytest_cache/
+status.json

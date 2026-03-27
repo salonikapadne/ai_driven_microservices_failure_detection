@@ -1,0 +1,101 @@
+# docker-compose.yml — AI Agent + simulated microservice targets
+#
+# Usage:
+#   docker-compose up -d --build        # start simulated services
+#   docker-compose run --rm ai-agent    # run the fake-log simulation once
+#   docker-compose down                 # teardown
+#
+# The ai-agent container needs the Docker socket so it can run
+# "docker restart / docker logs" against the sibling containers.
+
+version: "3.9"
+
+services:
+
+  # -------------------------------------------------------------------------
+  # AI Failure Detection Agent (LangGraph)
+  # Runs simulate.py — feeds fake logs through the full pipeline.
+  # -------------------------------------------------------------------------
+  ai-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-agent
+    environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-local}
+      LLM_FALLBACKS: ${LLM_FALLBACKS:-gemini,openai}
+
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:3b}
+
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VERTEX_AI_PROJECT_ID: ${VERTEX_AI_PROJECT_ID:-}
+      VERTEX_AI_LOCATION: ${VERTEX_AI_LOCATION:-us-central1}
+      VERTEX_AI_MODEL: ${VERTEX_AI_MODEL:-gemini-2.0-flash}
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4}
+
+      # dry_run=true means docker commands are simulated (no real container ops)
+      DRY_RUN: ${DRY_RUN:-true}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - gateway-service
+      - payment-service
+      - order-service
+      - user-service
+
+  # -------------------------------------------------------------------------
+  # Simulated microservices — real containers the agent can restart/inspect
+  # -------------------------------------------------------------------------
+  gateway-service:
+    image: alpine:3.19
+    container_name: gateway-service
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  payment-service:
+    image: alpine:3.19
+    container_name: payment-service
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  order-service:
+    image: alpine:3.19
+    container_name: order-service
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  user-service:
+    image: alpine:3.19
+    container_name: user-service
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Simulated database containers
+  # -------------------------------------------------------------------------
+  payment-service-db:
+    image: alpine:3.19
+    container_name: payment-service-db
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  order-service-db:
+    image: alpine:3.19
+    container_name: order-service-db
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  user-service-db:
+    image: alpine:3.19
+    container_name: user-service-db
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
+
+  gateway-service-db:
+    image: alpine:3.19
+    container_name: gateway-service-db
+    command: ["sh", "-c", "while true; do sleep 30; done"]
+    restart: unless-stopped
