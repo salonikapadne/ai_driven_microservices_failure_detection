@@ -5,11 +5,44 @@ const cors = require('cors');
 const amqp = require('amqplib');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { exec } = require('child_process');
+const nodemailer = require('nodemailer');
 
 const app = express();
 app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+
+// Configure NodeMailer transporter
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+    }
+});
+
+async function sendEmailAlert(service, rca, command) {
+    const mailOptions = {
+        from: process.env.EMAIL_USER || 'alert@microservices-sim.local',
+        to: 'sajoshi06@gmail.com',
+        subject: `🚨 Alert: Error/Crash in microservice ${service}`,
+        text: `An error or crash occurred in service: ${service}\n\nRoot Cause Analysis:\n${rca}\n\nSuggested/Executed Command:\n${command}\n\nTime of encounter:\n${new Date().toISOString()}`,
+        html: `<h2>🚨 Microservice Alert: ${service}</h2>
+               <p>An error or crash occurred in <strong>${service}</strong>.</p>
+               <h3>Root Cause Analysis:</h3>
+               <p>${rca}</p>
+               <h3>Suggested/Executed Healing Command:</h3>
+               <pre><code>${command}</code></pre>
+               <p><small>Time of encounter: ${new Date().toISOString()}</small></p>`
+    };
+
+    try {
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`[EMAIL ALERT] Sent to sajoshi06@gmail.com: ${info.messageId}`);
+    } catch (error) {
+        console.error(`[EMAIL ALERT ERROR] Failed to send email: ${error.message}`);
+    }
+}
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 let channel = null;
@@ -122,6 +155,7 @@ Return ONLY a JSON object: { "rca": "2 sentence explanation", "command": "docker
             state.rcaEvents.unshift(rcaEvent);
             if(state.rcaEvents.length > 50) state.rcaEvents.pop();
             io.emit('rca_event', rcaEvent);
+            sendEmailAlert(logObj.service, aiResult.rca, aiResult.command);
             if (aiResult.command) executeHealingSequence(aiResult.command, logObj.service);
         } catch (err) { 
             if (err.message.includes('429') || err.message.includes('quota') || err.message.includes('exceeded')) {
@@ -142,6 +176,7 @@ Return ONLY a JSON object: { "rca": "2 sentence explanation", "command": "docker
                  state.rcaEvents.unshift(rcaEvent);
                  if(state.rcaEvents.length > 50) state.rcaEvents.pop();
                  io.emit('rca_event', rcaEvent);
+                 sendEmailAlert(logObj.service, fallbackResult.rca, fallbackResult.command);
                  executeHealingSequence(fallbackResult.command, logObj.service);
                  
                  // Apply extended 5-minute cooldown to prevent looping fallback sequences

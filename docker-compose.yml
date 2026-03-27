@@ -54,6 +54,8 @@ services:
     container_name: ai-service
     environment:
       - GEMINI_API_KEY=AIzaSyDi_mAX3i9Mut6I4ZgOR5tETG8NYmRgJ4s  
+      - EMAIL_USER=sajoshi06@gmail.com
+      - EMAIL_PASS=lkurkyowjlniqcfk
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
