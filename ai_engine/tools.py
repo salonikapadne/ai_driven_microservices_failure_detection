@@ -252,6 +252,10 @@ TOOL_REGISTRY = {
 
 # Failure-type -> preferred action mapping
 ACTION_MAP: Dict[str, Dict] = {
+    FailureType.DB_APP_ESCALATE.value: {
+        "primary":  "escalate",
+        "fallback": "escalate",
+    },
     FailureType.DB_DOWN.value: {
         "primary":  "restart_database",
         "fallback": "restart_service",

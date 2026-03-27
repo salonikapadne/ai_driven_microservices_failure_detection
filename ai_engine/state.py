@@ -25,18 +25,25 @@ class IncidentStatus(Enum):
     RETRY      = "retry"
 
 # ---------------------------------------------------------------------------
-# Failure types (the 3 we care about)
+# Failure types
 # ---------------------------------------------------------------------------
 class FailureType(Enum):
-    DB_DOWN      = "db_down"
-    SERVICE_DOWN = "service_down"
-    ERROR_LOGS   = "error_logs"
-    UNKNOWN      = "unknown"
+    DB_DOWN         = "db_down"
+    DB_APP_ESCALATE = "db_app_escalate"  # app-level DB issue → human-in-the-loop (see HIL_DB_DEMO markers)
+    SERVICE_DOWN    = "service_down"
+    ERROR_LOGS      = "error_logs"
+    UNKNOWN         = "unknown"
 
 # ---------------------------------------------------------------------------
 # Known services
 # ---------------------------------------------------------------------------
-KNOWN_SERVICES = ["gateway-service", "payment-service", "order-service", "user-service"]
+KNOWN_SERVICES = [
+    "gateway-service",
+    "payment-service",
+    "order-service",
+    "user-service",
+    "hil-db-demo",
+]
 
 # ---------------------------------------------------------------------------
 # Incident dataclass
@@ -101,8 +108,14 @@ class Incident:
         )
 
 # ---------------------------------------------------------------------------
-# Failure classifier — maps raw logs to one of 3 failure types
+# Failure classifier — maps raw logs to failure types
 # ---------------------------------------------------------------------------
+# Checked before generic DB_KEYWORDS. Emitted by hil-db-demo / manual logs for HIL demos.
+DB_APP_ESCALATE_MARKERS = [
+    "[hil_db_demo]",
+    "db_app_escalate:",
+]
+
 DB_KEYWORDS = [
     "connection refused", "connection timeout", "connection reset",
     "database", "postgres", "mysql", "mongodb", "redis",
@@ -129,6 +142,17 @@ def classify_failure(
 ) -> tuple:
     """Return (failure_type, error_keyword, severity, tags)."""
     logs_lower = " ".join(log_lines).lower()
+
+    # 0) DB_APP_ESCALATE — application-level DB errors that must not be auto-remediated
+    if any(m in logs_lower for m in DB_APP_ESCALATE_MARKERS):
+        keyword = next((m for m in DB_APP_ESCALATE_MARKERS if m in logs_lower), "hil_db_demo")
+        logger.info("Classified as DB_APP_ESCALATE (marker=%s)", keyword)
+        return (
+            FailureType.DB_APP_ESCALATE.value,
+            keyword,
+            "critical",
+            ["database", "human_escalation", "hil_db_demo"],
+        )
 
     # 1) DB_DOWN — connection / database keywords
     if any(kw in logs_lower for kw in DB_KEYWORDS):

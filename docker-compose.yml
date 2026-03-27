@@ -34,6 +34,18 @@ services:
     restart: always
 
   # ---------------------------------------------------------------------------
+  # HIL demo — logs only; simulates app-level DB errors for human-in-the-loop (db_app_escalate)
+  # ---------------------------------------------------------------------------
+  hil-db-demo:
+    build: ./hil-db-demo
+    container_name: hil-db-demo
+    environment:
+      - HIL_ESCALATE_AFTER_SEC=${HIL_ESCALATE_AFTER_SEC:-60}
+      - HIL_DUMMY_INTERVAL_SEC=${HIL_DUMMY_INTERVAL_SEC:-10}
+      - HIL_DEMO_INTERVAL_SEC=${HIL_DEMO_INTERVAL_SEC:-120}
+    restart: always
+
+  # ---------------------------------------------------------------------------
   # Message broker
   # ---------------------------------------------------------------------------
   rabbitmq:
@@ -57,6 +69,7 @@ services:
       - order-service
       - payment-service
       - gateway-service
+      - hil-db-demo
       - rabbitmq
     restart: always
 

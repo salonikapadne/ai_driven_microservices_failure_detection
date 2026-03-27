@@ -49,6 +49,7 @@ class FakeLLM:
         failure_type = ft_match.group(1) if ft_match else ""
 
         action_map = {
+            "db_app_escalate": ("escalate", "Application-level DB error — human required."),
             "db_down":      ("restart_database", "Database connection failure detected."),
             "service_down": ("restart_service",  "Service container has crashed."),
             "error_logs":   ("restart_service",  "Application errors detected in running container."),
@@ -185,6 +186,18 @@ class TestClassifier:
         ft, kw, sev, tags = classify_failure(["INFO All good"], "running", 0)
         assert ft == FailureType.UNKNOWN.value
 
+    def test_db_app_escalate(self):
+        ft, kw, sev, tags = classify_failure(
+            [
+                "[HIL_DB_DEMO] FATAL schema migration checksum mismatch",
+                "human escalation required",
+            ],
+            "running",
+            0,
+        )
+        assert ft == FailureType.DB_APP_ESCALATE.value
+        assert "human_escalation" in tags
+
 
 # =====================================================================
 # 3. LangGraph agent tests
@@ -230,6 +243,22 @@ class TestLangGraphAgent:
         assert result["failure_type"] == "error_logs"
         assert result["decision"]["action"] == "restart_service"
         assert result["decision"]["fix_explanation"] != ""
+
+    def test_db_app_escalate_skips_llm_and_escalates(self, state_manager, tool_manager):
+        agent = _make_agent(state_manager, tool_manager)
+        result = agent.run(
+            service="hil-db-demo",
+            log_lines=[
+                "[HIL_DB_DEMO] FATAL schema migration checksum mismatch",
+                "db_app_escalate: manual repair required",
+            ],
+            container_status="running",
+            exit_code=0,
+        )
+        assert result["failure_type"] == "db_app_escalate"
+        assert result["decision"]["action"] == "escalate"
+        assert result["final_status"] == IncidentStatus.ESCALATED.value
+        assert result["healed"] is False
 
     def test_incident_stored_in_state_manager(self, state_manager, tool_manager):
         agent = _make_agent(state_manager, tool_manager)
@@ -366,7 +395,12 @@ class TestTools:
         assert refreshed.resolved
 
     def test_action_map_covers_all_failure_types(self):
-        for ft in [FailureType.DB_DOWN, FailureType.SERVICE_DOWN, FailureType.ERROR_LOGS]:
+        for ft in [
+            FailureType.DB_APP_ESCALATE,
+            FailureType.DB_DOWN,
+            FailureType.SERVICE_DOWN,
+            FailureType.ERROR_LOGS,
+        ]:
             assert ft.value in ACTION_MAP, f"Missing ACTION_MAP entry for {ft.value}"
 
 
@@ -437,6 +471,21 @@ class TestFullLangGraphPipeline:
         assert result["final_status"] == IncidentStatus.ESCALATED.value
         assert result["healed"] is False
 
+        inc = state_manager.get_incident(result["incident_id"])
+        assert inc.status == IncidentStatus.ESCALATED
+
+    def test_db_app_escalate_full_pipeline(self, state_manager, tool_manager):
+        agent = _make_agent(state_manager, tool_manager)
+        result = agent.run(
+            service="hil-db-demo",
+            log_lines=["[HIL_DB_DEMO] FATAL migration checksum mismatch"],
+            container_status="running",
+            exit_code=0,
+        )
+        assert result["failure_type"] == "db_app_escalate"
+        assert result["decision"]["action"] == "escalate"
+        assert result["final_status"] == IncidentStatus.ESCALATED.value
+        assert result["healed"] is False
         inc = state_manager.get_incident(result["incident_id"])
         assert inc.status == IncidentStatus.ESCALATED
 

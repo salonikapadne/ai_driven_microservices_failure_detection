@@ -4,7 +4,7 @@
 # No RabbitMQ, no HTTP server — just the agent logic end-to-end.
 #
 # Run:
-#   python simulate.py                   # all 9 scenarios
+#   python simulate.py                   # all scenarios
 #   python simulate.py --scenario 1      # single scenario by number
 #   python simulate.py --dry-llm         # use FakeLLM (no API key needed)
 
@@ -42,6 +42,7 @@ class FakeLLM:
         ft_match = re.search(r"Failure Type\s*:\s*(\S+)", prompt)
         failure_type = ft_match.group(1) if ft_match else ""
         action_map = {
+            "db_app_escalate": "escalate",
             "db_down":      "restart_database",
             "service_down": "restart_service",
             "error_logs":   "restart_service",
@@ -103,6 +104,19 @@ SCENARIOS = [
         ],
         "expected_type":   "db_down",
         "expected_action": "restart_database",
+    },
+    {
+        "name": "DB_APP_ESCALATE — hil-db-demo (simulated migration failure → human)",
+        "service": "hil-db-demo",
+        "container_status": "running",
+        "exit_code": 0,
+        "log_lines": [
+            "2026-03-27 21:00:00 INFO  Starting migration runner",
+            "[HIL_DB_DEMO] 2026-03-27 21:00:01 FATAL schema migration checksum mismatch — database state cannot be reconciled automatically",
+            "[HIL_DB_DEMO] human escalation required: run manual migration repair",
+        ],
+        "expected_type":   "db_app_escalate",
+        "expected_action": "escalate",
     },
     # ── SERVICE_DOWN ─────────────────────────────────────────────────────────
     {

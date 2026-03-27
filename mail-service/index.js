@@ -66,6 +66,27 @@ function buildBodies(rcaEvent) {
     return { subject, text, html };
   }
 
+  if (kind === "escalation") {
+    const subject = `🚨 Human escalation required: ${service}`;
+    const text = `Human escalation: ${service}\n\nNo automated Docker command was executed. Review the details below.\n\nContext:\n${rca}\n\nManual follow-up (placeholder):\n${command}\n\nTime: ${timestamp}`;
+    const html = `
+    <div style="font-family: Inter, system-ui, sans-serif; max-width: 600px; margin: auto;">
+      <div style="background: #7c2d12; color: white; padding: 20px 24px; border-radius: 8px 8px 0 0;">
+        <h2 style="margin:0;">🚨 Human escalation: ${escSvc}</h2>
+      </div>
+      <div style="background: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p style="color: #374151; margin-bottom: 16px;">No automated container action was run. An engineer should investigate.</p>
+        <h3 style="color: #111827; margin-bottom: 8px;">Context</h3>
+        <p style="color: #374151; line-height: 1.6; white-space: pre-wrap;">${escRca}</p>
+        <h3 style="color: #111827; margin-top: 20px; margin-bottom: 8px;">Manual follow-up</h3>
+        <pre style="background: #1f2937; color: #fde68a; padding: 12px 16px; border-radius: 6px;
+                    font-size: 13px; overflow-x: auto; white-space: pre-wrap;">${escCmd}</pre>
+        <p style="margin-top: 20px; font-size: 12px; color: #9ca3af;">${escTs}</p>
+      </div>
+    </div>`;
+    return { subject, text, html };
+  }
+
   const subject = `🚨 Alert: Failure detected in ${service}`;
   const text = `Microservice Alert: ${service}\n\nRoot Cause Analysis:\n${rca}\n\nHealing Command Executed:\n${command}\n\nTime: ${timestamp}`;
   const html = `

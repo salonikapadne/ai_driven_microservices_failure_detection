@@ -1,7 +1,13 @@
 const { spawn, exec } = require('child_process');
 const amqp = require('amqplib');
 
-const services = ['user-service', 'order-service', 'payment-service', 'gateway-service'];
+const services = [
+    'user-service',
+    'order-service',
+    'payment-service',
+    'gateway-service',
+    'hil-db-demo',
+];
 
 let channel = null;
 

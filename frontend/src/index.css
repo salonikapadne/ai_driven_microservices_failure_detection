@@ -287,7 +287,23 @@ body {
   margin-bottom: 0.75rem;
 }
 
-.rca-header { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+.rca-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; margin-bottom: 0.5rem; }
+.rca-header-left { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.rca-badge-escalation {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: #9a3412;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+.rca-item-escalation {
+  background: #fff7ed;
+  border-left: 4px solid #9a3412;
+  padding-left: 0.75rem;
+}
 .rca-service { font-size: 0.75rem; font-weight: 600; color: #dc2626; }
 .rca-time { font-size: 0.7rem; color: var(--text-muted); }
 .rca-desc {

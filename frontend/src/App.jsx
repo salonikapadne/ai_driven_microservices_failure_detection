@@ -270,16 +270,29 @@ function App() {
               <div className="card rca-events">
                 <h3>Recent AI Interventions</h3>
                 <div className="rca-list">
-                  {rcaEvents.length > 0 ? rcaEvents.map((ev, i) => (
-                    <div key={i} className="rca-item">
+                  {rcaEvents.length > 0 ? rcaEvents.map((ev, i) => {
+                    const isEscalation = ev.alert_kind === 'escalation';
+                    return (
+                    <div
+                      key={i}
+                      className={`rca-item${isEscalation ? ' rca-item-escalation' : ''}`}
+                    >
                       <div className="rca-header">
-                        <span className="rca-service">{ev.service}</span>
+                        <div className="rca-header-left">
+                          <span className="rca-service">{ev.service}</span>
+                          {isEscalation && (
+                            <span className="rca-badge-escalation" title="Human-in-the-loop">
+                              Escalation
+                            </span>
+                          )}
+                        </div>
                         <span className="rca-time">{new Date(ev.timestamp).toLocaleTimeString()}</span>
                       </div>
                       <p className="rca-desc">{ev.rca}</p>
                       <code className="rca-command">{ev.command}</code>
                     </div>
-                  )) : <p className="empty-state" style={{color: '#9ca3af', fontStyle:'italic'}}>No failures autonomously patched yet.</p>}
+                    );
+                  }) : <p className="empty-state" style={{color: '#9ca3af', fontStyle:'italic'}}>No failures autonomously patched yet.</p>}
                 </div>
               </div>
 

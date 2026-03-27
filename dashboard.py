@@ -131,6 +131,7 @@ _state = {
         "order-service":   {"status": "unknown", "exitCode": None, "lastSeen": None},
         "payment-service": {"status": "unknown", "exitCode": None, "lastSeen": None},
         "gateway-service": {"status": "unknown", "exitCode": None, "lastSeen": None},
+        "hil-db-demo":      {"status": "unknown", "exitCode": None, "lastSeen": None},
     },
 }
 _state_lock = threading.Lock()
@@ -340,6 +341,35 @@ def _send_email_smtp(recipients: list, rca_event: dict) -> None:
       </div>
     </div>
     """
+    elif kind == "escalation":
+        title_plain = f"Human escalation required for {service}"
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = f"\U0001f6a8 {title_plain}"
+        msg["From"]    = EMAIL_USER
+        msg["To"]      = ", ".join(recipients)
+        text_body = (
+            f"Human escalation: {service}\n\n"
+            f"No automated Docker command was executed. Review the details below.\n\n"
+            f"Details:\n{rca}\n\n"
+            f"Suggested manual follow-up (placeholder):\n{command}\n\n"
+            f"Time: {timestamp}"
+        )
+        html_body = f"""
+    <div style="font-family: Inter, system-ui, sans-serif; max-width: 600px; margin: auto;">
+      <div style="background: #7c2d12; color: white; padding: 20px 24px; border-radius: 8px 8px 0 0;">
+        <h2 style="margin:0;">\U0001f6a8 Human escalation: {esc_svc}</h2>
+      </div>
+      <div style="background: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+        <p style="color: #374151; margin-bottom: 16px;">No automated container action was run. An engineer should investigate.</p>
+        <h3 style="color: #111827; margin-bottom: 8px;">Context</h3>
+        <p style="color: #374151; line-height: 1.6; white-space: pre-wrap;">{esc_rca}</p>
+        <h3 style="color: #111827; margin-top: 20px; margin-bottom: 8px;">Manual follow-up</h3>
+        <pre style="background: #1f2937; color: #fde68a; padding: 12px 16px; border-radius: 6px;
+                    font-size: 13px; overflow-x: auto; white-space: pre-wrap;">{esc_cmd}</pre>
+        <p style="margin-top: 20px; font-size: 12px; color: #9ca3af;">{html.escape(timestamp, quote=True)}</p>
+      </div>
+    </div>
+    """
     else:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"\U0001f6a8 Alert: Failure detected in {service}"
@@ -488,12 +518,21 @@ def _run_analysis(logobj: dict) -> None:
             decision.get("root_cause", ""),
         ])) or f"Failure detected on {target} — action: {action}"
 
+        final_status = (result.get("final_status") or "").lower()
+        is_escalation = final_status == "escalated" or action == "escalate"
+        if is_escalation:
+            rca_text = (
+                "Escalated — human intervention required.\n\n" + rca_text.strip()
+            )
+
         rca_event = {
             "service":   target,
             "rca":       rca_text,
             "command":   command,
             "timestamp": datetime.now().isoformat(),
         }
+        if is_escalation:
+            rca_event["alert_kind"] = "escalation"
 
         with _state_lock:
             _state["rcaEvents"].insert(0, rca_event)

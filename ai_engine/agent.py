@@ -260,6 +260,7 @@ ALLOWED ACTIONS (pick exactly one):
   escalate            — flag for human intervention
 
 RULES:
+  - If failure_type is db_app_escalate, you MUST choose escalate — never restart_database or restart_service; this requires human intervention.
   - If failure_type is db_down, prefer restart_database first.
   - If failure_type is service_down, prefer restart_service.
   - If failure_type is service_down and Container is not running (exited, dead, stopped, or any non-running state), you MUST choose restart_service — do NOT escalate; a stopped container is healed by starting it again via restart.
@@ -294,6 +295,31 @@ def _escalation_decision(incident: Incident) -> Dict:
     }
 
 
+def _db_app_hil_decision(incident: Incident) -> Dict:
+    """Human-in-the-loop for application-level DB errors (classifier: db_app_escalate)."""
+    return {
+        "action": "escalate",
+        "service": incident.service,
+        "error_summary": (
+            f"Application-level database error on {incident.service} (failure_type=db_app_escalate). "
+            "Logs match a human-escalation pattern (e.g. migration failure); container restarts are not sufficient."
+        ),
+        "root_cause": (
+            "The classifier marked this as an application/schema/credential-level database issue, "
+            "not a simple connectivity outage."
+        ),
+        "fix_explanation": (
+            "An engineer should inspect migrations, schema state, and credentials. "
+            "Automated docker restart is intentionally not applied for this failure class."
+        ),
+        "reasoning": (
+            "Policy: db_app_escalate always requires human-in-the-loop; no automated self-heal path."
+        ),
+        "confidence": "high",
+        "alternative": "escalate",
+    }
+
+
 def _coerce_self_heal_decision(incident: Incident, decision: Dict, state_manager: StateManager) -> Dict:
     """If the model returned escalate but retries remain, run ACTION_MAP[failure_type] instead.
 
@@ -301,6 +327,15 @@ def _coerce_self_heal_decision(incident: Incident, decision: Dict, state_manager
     escalate for db_down / error_logs or when JSON is malformed. While retries are not
     exhausted, map to the primary tool for the classified failure type.
     """
+    if incident.failure_type == FailureType.DB_APP_ESCALATE.value:
+        if decision.get("action") != "escalate":
+            logger.info(
+                "Coercing action %r → escalate (db_app_escalate policy)",
+                decision.get("action"),
+            )
+            return _db_app_hil_decision(incident)
+        return decision
+
     if state_manager.should_escalate(incident.id):
         return decision
     if decision.get("action") != "escalate":
@@ -504,7 +539,10 @@ def _make_analyze_node(llm, active_provider: str, state_manager: StateManager):
         inc = state_manager.get_incident(state["incident_id"])
         state_manager.update_incident(inc.id, status=IncidentStatus.ANALYZING)
 
-        if state_manager.should_escalate(inc.id):
+        if inc.failure_type == FailureType.DB_APP_ESCALATE.value:
+            decision = _db_app_hil_decision(inc)
+            logger.info("Skipping LLM for %s — db_app_escalate → human-in-the-loop", inc.id)
+        elif state_manager.should_escalate(inc.id):
             logger.warning("Retry limit reached for %s — escalating", inc.id)
             decision = _escalation_decision(inc)
         else:
