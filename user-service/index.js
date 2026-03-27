@@ -54,9 +54,9 @@ app.get('/fail', (req, res) => {
     }
 });
 
-// setInterval(() => {
-//     generateLog('INFO', 'Routine background task ran');
-// }, Math.floor(Math.random() * 5000) + 5000);
+setInterval(() => {
+    generateLog('INFO', 'Routine healthy heartbeats transmitted');
+}, Math.floor(Math.random() * 5000) + 5000);
 
 app.listen(PORT, () => {
     generateLog('INFO', `Service started on port ${PORT}`);

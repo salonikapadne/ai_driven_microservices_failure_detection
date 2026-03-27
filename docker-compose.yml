@@ -28,6 +28,14 @@ services:
       - "3000:3000"
     restart: always
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: always
+
   log-collector:
     build: ./log-collector
     container_name: log-collector
@@ -38,3 +46,27 @@ services:
       - order-service
       - payment-service
       - gateway-service
+      - rabbitmq
+    restart: always
+
+  ai-service:
+    build: ./ai-service
+    container_name: ai-service
+    environment:
+      - GEMINI_API_KEY=AIzaSyDi_mAX3i9Mut6I4ZgOR5tETG8NYmRgJ4s  
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "4000:4000"
+    depends_on:
+      - rabbitmq
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - ai-service
+    restart: always
