@@ -1,5 +1,10 @@
 version: '3.8'
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # Microservices
+  # ---------------------------------------------------------------------------
   user-service:
     build: ./user-service
     container_name: user-service
@@ -28,6 +33,42 @@ services:
       - "3000:3000"
     restart: always
 
+  # ---------------------------------------------------------------------------
+  # HIL demo — logs only; simulates app-level DB errors for human-in-the-loop (db_app_escalate)
+  # ---------------------------------------------------------------------------
+  hil-db-demo:
+    build: ./hil-db-demo
+    container_name: hil-db-demo
+    environment:
+      - HIL_ESCALATE_AFTER_SEC=${HIL_ESCALATE_AFTER_SEC:-60}
+      - HIL_DUMMY_INTERVAL_SEC=${HIL_DUMMY_INTERVAL_SEC:-10}
+      - HIL_DEMO_INTERVAL_SEC=${HIL_DEMO_INTERVAL_SEC:-120}
+    restart: always
+
+  # Code-heal demo — Flask app with intentional bug; seed→live reset on each container start
+  buggy-service:
+    build: ./buggy-service
+    container_name: buggy-service
+    ports:
+      - "3010:3010"
+    volumes:
+      - ./buggy-service/live:/app/live
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # Message broker
+  # ---------------------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # Log collection — tails Docker container logs and publishes to logs_queue
+  # ---------------------------------------------------------------------------
   log-collector:
     build: ./log-collector
     container_name: log-collector
@@ -38,3 +79,109 @@ services:
       - order-service
       - payment-service
       - gateway-service
+      - hil-db-demo
+      - buggy-service
+      - rabbitmq
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # Mail — Resend API (preferred) or Gmail SMTP; dashboard POSTs /send-alert when MAILER_URL is set
+  # ---------------------------------------------------------------------------
+  mail-service:
+    build: ./mail-service
+    container_name: mail-service
+    environment:
+      - PORT=4100
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - RESEND_FROM=${RESEND_FROM:-}
+      - EMAIL_USER=${EMAIL_USER:-}
+      - EMAIL_PASS=${EMAIL_PASS:-}
+      - MAILER_INTERNAL_TOKEN=${MAILER_INTERNAL_TOKEN:-}
+    expose:
+      - "4100"
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # AI Engine — LangGraph failure detection and recovery brain
+  # Replaces ai-service entirely. Consumes logs_queue via consumer.py and
+  # runs the full incident response pipeline (classify → analyze → execute → verify).
+  # ---------------------------------------------------------------------------
+  ai-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-engine
+    environment:
+      # LLM provider — primary is Vertex AI, falls back to gemini then openai
+      - LLM_PROVIDER=${LLM_PROVIDER:-vertex_ai}
+      - LLM_FALLBACKS=${LLM_FALLBACKS:-gemini,openai}
+      # Google Vertex AI (primary) — credentials via mounted service account key
+      - VERTEX_AI_PROJECT_ID=${VERTEX_AI_PROJECT_ID:-}
+      - VERTEX_AI_LOCATION=${VERTEX_AI_LOCATION:-us-central1}
+      - VERTEX_AI_MODEL=${VERTEX_AI_MODEL:-gemini-2.5-pro}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/vertex-ai-key.json
+      # Google Gemini direct API (fallback)
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      # OpenAI (fallback)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4}
+      # Ollama local (optional fallback — no API key)
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434/api/generate}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+      # RabbitMQ consumer
+      - RABBITMQ_URL=${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      - RABBITMQ_QUEUE=${RABBITMQ_QUEUE:-logs_queue}
+      # Set DRY_RUN=true to classify/analyze without executing real docker commands
+      - DRY_RUN=${DRY_RUN:-false}
+      - TOOLS_DRY_RUN=${TOOLS_DRY_RUN:-false}
+      - DISABLE_CONSUMER=${DISABLE_CONSUMER:-false}
+      # Dashboard Socket.IO server settings
+      - DASHBOARD_HOST=0.0.0.0
+      - DASHBOARD_PORT=4000
+      - ANALYSIS_COOLDOWN=${ANALYSIS_COOLDOWN:-45}
+      # Email — optional nodemailer sidecar (set both to use mail-service instead of in-process SMTP)
+      - MAILER_URL=${MAILER_URL:-http://mail-service:4100}
+      - MAILER_INTERNAL_TOKEN=${MAILER_INTERNAL_TOKEN:-}
+      - EMAIL_USER=${EMAIL_USER:-}
+      - EMAIL_PASS=${EMAIL_PASS:-}
+      - EMAIL_ALERT_RECIPIENTS=${EMAIL_ALERT_RECIPIENTS:-}
+      # Stream ai_engine loggers to Socket.IO (agent/state/tools)
+      - AI_ENGINE_LOG_TO_UI=${AI_ENGINE_LOG_TO_UI:-true}
+      - MAX_AI_ENGINE_LOGS=${MAX_AI_ENGINE_LOGS:-300}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Explicit paths if PATH is ever stripped (image sets /usr/local/bin/docker + docker-compose)
+      - DOCKER_BIN=${DOCKER_BIN:-docker}
+      - DOCKER_COMPOSE_BIN=${DOCKER_COMPOSE_BIN:-docker-compose}
+      # Code-heal prototype: shared live source + HTTP verify (same host dir as buggy-service)
+      - CODE_HEAL_ROOT=${CODE_HEAL_ROOT:-/buggy-live}
+      - CODE_HEAL_FILES=${CODE_HEAL_FILES:-app.py}
+      - CODE_HEAL_SERVICES=${CODE_HEAL_SERVICES:-buggy-service}
+      - BUGGY_SERVICE_HEALTH_URL=${BUGGY_SERVICE_HEALTH_URL:-http://buggy-service:3010/health}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mount Vertex AI service account JSON (must be a file). Wrong/missing host path → Docker creates a directory and Vertex fails with "Is a directory".
+      - ./vertex-ai-key.json:/app/vertex-ai-key.json:ro
+      - ./buggy-service/live:/buggy-live
+    ports:
+      - "4000:4000"
+    depends_on:
+      - rabbitmq
+      - log-collector
+      - mail-service
+      - buggy-service
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # Frontend
+  # ---------------------------------------------------------------------------
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    environment:
+      # Browser runs on host; ai-engine publishes 4000 on host — same default as local dev
+      - VITE_SOCKET_URL=${VITE_SOCKET_URL:-http://localhost:4000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - gateway-service
+    restart: always

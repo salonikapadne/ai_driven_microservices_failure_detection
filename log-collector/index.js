@@ -1,6 +1,39 @@
 const { spawn, exec } = require('child_process');
+const amqp = require('amqplib');
 
-const services = ['user-service', 'order-service', 'payment-service', 'gateway-service'];
+const services = [
+    'user-service',
+    'order-service',
+    'payment-service',
+    'gateway-service',
+    'hil-db-demo',
+    'buggy-service',
+];
+
+let channel = null;
+
+async function connectRabbitMQ() {
+    try {
+        const conn = await amqp.connect('amqp://rabbitmq');
+        channel = await conn.createChannel();
+        await channel.assertQueue('logs_queue');
+        console.log('Log Collector: Connected to RabbitMQ framework!');
+    } catch (e) {
+        console.error('RabbitMQ connection failed, retrying in 5s...', e.message);
+        setTimeout(connectRabbitMQ, 5000);
+    }
+}
+connectRabbitMQ();
+
+function sendToQueue(dataObj) {
+    if (channel) {
+        channel.sendToQueue('logs_queue', Buffer.from(JSON.stringify(dataObj)));
+        // Consoles exactly what was shipped downstream natively formatted
+        console.log(JSON.stringify(dataObj, null, 2));
+    } else {
+        console.log(JSON.stringify(dataObj, null, 2));
+    }
+}
 
 function getContainerStats(serviceName) {
     return new Promise((resolve) => {
@@ -30,7 +63,7 @@ function processDataChunk(serviceName, data) {
             exit_code: stats.exitCode,
             logs: lines
         };
-        console.log(JSON.stringify(output, null, 2));
+        sendToQueue(output);
     });
 }
 
@@ -40,13 +73,13 @@ function tailLogs(serviceName) {
     getContainerStats(serviceName).then(stats => {
         if (stats.status === 'running') {
             if (serviceStates[serviceName] !== 'running') {
-                console.log(JSON.stringify({
+                sendToQueue({
                     service: serviceName,
                     timestamp: new Date().toISOString(),
                     container_status: stats.status,
                     exit_code: stats.exitCode,
                     logs: [`Starting log collection for ${serviceName}...`]
-                }, null, 2));
+                });
                 serviceStates[serviceName] = 'running';
             }
 
@@ -59,25 +92,25 @@ function tailLogs(serviceName) {
             child.on('close', (code) => {
                 getContainerStats(serviceName).then(closeStats => {
                     serviceStates[serviceName] = closeStats.status;
-                    console.log(JSON.stringify({
+                    sendToQueue({
                         service: serviceName,
                         timestamp: new Date().toISOString(),
                         container_status: closeStats.status,
                         exit_code: closeStats.exitCode,
                         logs: [`Log tailing for ${serviceName} exited. Container is now ${closeStats.status}.`]
-                    }, null, 2));
+                    });
                     setTimeout(() => tailLogs(serviceName), 5000);
                 });
             });
         } else {
             if (serviceStates[serviceName] !== stats.status) {
-                console.log(JSON.stringify({
+                sendToQueue({
                     service: serviceName,
                     timestamp: new Date().toISOString(),
                     container_status: stats.status,
                     exit_code: stats.exitCode,
                     logs: [`Container ${serviceName} is ${stats.status}. Waiting to restart log collection...`]
-                }, null, 2));
+                });
                 serviceStates[serviceName] = stats.status;
             }
             setTimeout(() => tailLogs(serviceName), 5000);
@@ -86,5 +119,4 @@ function tailLogs(serviceName) {
 }
 
 services.forEach(tailLogs);
-
 setInterval(() => {}, 1000 * 60 * 60);

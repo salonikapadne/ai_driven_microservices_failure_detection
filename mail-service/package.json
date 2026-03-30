@@ -1,0 +1,14 @@
+{
+  "name": "mail-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Internal mail sidecar: Resend API or Gmail (nodemailer) for ai-engine alerts",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "nodemailer": "^6.9.16"
+  }
+}
