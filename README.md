@@ -11,6 +11,46 @@ Currently we have implemented the following cases where the AI self detects and 
 - **DB Failure**
 - **Buggy Code**
 
+---
+
+## Architecture Diagram
+```mermaid
+flowchart LR
+  subgraph observe [Observe]
+    SVC[Microservice containers]
+    LC[log-collector]
+  end
+  subgraph bus [Message bus]
+    RMQ[RabbitMQ logs_queue]
+  end
+  subgraph decide [Decide and act]
+    DASH[dashboard.py consumer]
+    AG[LangGraph agent]
+    TM[ToolManager]
+  end
+  subgraph act [Act]
+    DOCK[Docker socket]
+    VOL[Mounted volumes]
+    HTTP[HTTP health]
+  end
+  subgraph notify [Notify]
+    SIO[Socket.IO]
+    FE[React frontend]
+    MAIL[Mail SMTP or mail-service]
+  end
+  SVC --> LC
+  LC --> RMQ
+  RMQ --> DASH
+  DASH -->|agent.run| AG
+  AG --> TM
+  TM --> DOCK
+  TM --> VOL
+  TM --> HTTP
+  DASH --> SIO
+  SIO --> FE
+  DASH --> MAIL
+```
+
 ### Functionality
 1. **Frontend (React)**:
    - Provides the user-facing application where users interact with the services.
